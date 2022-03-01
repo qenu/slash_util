@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, TypeVar, overload, Union, Generic, get_origin, get_args, Literal
 
 import discord, discord.state
+from discord.ext.commands._types import Check as CheckFn
 
 NumT = Union[int, float]
 
@@ -191,6 +192,7 @@ class Command(Generic[CogT]):
     func: Callable
     name: str
     guild_id: int | None
+    checks: list[CheckFn]
 
     def _build_command_payload(self) -> dict[str, Any]:
         raise NotImplementedError
@@ -200,6 +202,20 @@ class Command(Generic[CogT]):
 
     async def invoke(self, context: Context[BotT, CogT], **params) -> None:
         await self.func(self.cog, context, **params)
+
+    @property
+    def __commands_checks__(self) -> list[CheckFn]:
+        return self.checks
+
+    async def can_run(self, ctx: Context[BotT, CogT]) -> bool:
+        # TODO: global checks
+
+        # TODO: cog checks
+
+        if not self.checks:
+            return True
+        
+        return await discord.utils.async_all(pred(ctx) for pred in self.checks)  # type: ignore
 
 class SlashCommand(Command[CogT]):
     def __init__(self, func: CmdT, **kwargs):
@@ -214,6 +230,12 @@ class SlashCommand(Command[CogT]):
 
         self.parameters = self._build_parameters()
         self._parameter_descriptions: dict[str, str] = defaultdict(lambda: "No description provided")
+
+        try:
+            checks = func.__commands_checks__
+        except AttributeError:
+            checks = kwargs.get("checks", [])
+        self.checks: list[commands._types.Check] = checks  # type: ignore
 
     def _build_arguments(self, interaction, state):
         if 'options' not in interaction.data:
@@ -326,6 +348,12 @@ class ContextMenuCommand(Command[CogT]):
         self.func = func
         self.guild_id: int | None = kwargs.get('guild_id', None)
         self.name: str = kwargs.get('name', func.__name__)
+
+        try:
+            checks = func.__commands_checks__  # type: ignore
+        except AttributeError:
+            checks = kwargs.get("checks", [])
+        self.checks: list[commands._types.Check] = checks  # type: ignore
 
     def _build_command_payload(self):
         payload = {

@@ -39,10 +39,10 @@ class Bot(commands.AutoShardedBot):
     async def _internal_interaction_handler(self, interaction: discord.Interaction):
         if interaction.type.value == 5:  # MODAL_SUBMIT
             if not hasattr(self._connection, '_modals'):
-                self.bot._connection._modals = {}  # type: ignore
+                self._connection._modals = {}  # type: ignore
 
             custom_id = interaction.data['custom_id']  # type: ignore
-            modal: Modal | None = self.bot._connection._modals.pop(custom_id, None)  # type: ignore
+            modal: Modal | None = self._connection._modals.pop(custom_id, None)  # type: ignore
             if modal is not None:
                 modal._response.set_result(interaction)
             return
@@ -63,6 +63,9 @@ class Bot(commands.AutoShardedBot):
         
         ctx = Context(self, command, interaction)
         try:
+            if not await command_error_wrapper(command.can_run, ctx):
+                raise commands.CheckFailure(f"The check functions for application command '{command.name}' failed")
+
             await command_error_wrapper(command.invoke, ctx, **params)
         except commands.CommandError as e:
             await cog.slash_command_error(ctx, e)
